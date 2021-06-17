@@ -1,35 +1,69 @@
-const db = require('../data/db-config')
 
-async function getRecipeById(recipe_id) {
-    
-    const recipeObj = await db('recipes as r')
-        .where('r.recipe_id', recipe_id).first()
-    
-    const ingredientsArr = await db('ingredients as i')
-            .leftJoin('step_ingredients as si', 'i.ingredient_id', 'si.ingredient_id')
-            .leftJoin('steps as s', 'si.step_id', 's.step_id')
-            .select('s.step_id', 's.step_number', 's.step_instructions','i.ingredient_id', 'i.ingredient_name', 'si.quantity')
-            .where('s.recipe_id', recipe_id)
+const db = require("../data/db-config");
 
-    const addIngredients = ingredientsArr.reduce((acc, step) => {
-        const { ingredient_id, ingredient_name, quantity } = step
-        if (acc[step.step_id]) {
-            acc[step.step_id].ingredients.push({ingredient_id, ingredient_name, quantity})
-        } else {
-            if (!step.ingredient_id) {
-                acc[step.step_id] = {step_id: step.step_id, step_number: step.step_number, step_instructions: step.step_instructions, ingredients: []}
-            } else {
-                acc[step.step_id] = {step_id: step.step_id, step_number: step.step_number, step_instructions: step.step_instructions, ingredients: [{ingredient_id, ingredient_name, quantity}]}
+const getRecipeById = async (recipe_id) => {
+    const info = await db("recipes as r")
+    //Grabbing recipes because it's the main table.
+    .leftJoin("steps as s", "r.recipe_id", "s.recipe_id")
+    //Join with steps so we can select step_id, step_number, and step_instructions
+    .leftJoin("step_ingredients as si", "si.step_id", "s.step_id")
+    //Join with step_ingredients so we can select quantity
+    .leftJoin("ingredients as i", "i.ingredient_id", "si.ingredient_id")
+    //Join with ingredients so we can select ingredient_name and ingredient_id
+    .select(
+        "r.recipe_id",
+        "r.recipe_name",
+        "s.step_id",
+        "s.step_number",
+        "s.step_instructions",
+        "i.ingredient_id",
+        "i.ingredient_name",
+        "si.quantity"
+    )
+    //Select everything we want to be displayed
+    .orderBy("s.step_number", "asc")
+    //Order by step number
+    .where("r.recipe_id", recipe_id)
+    //Select which specific recipe we want to show
+
+    const recipes = {
+        //Creating the shape of the response using the above variable.
+        recipe_id: info[0].recipe_id,
+        recipe_name: info[0].recipe_name,
+        steps: info.reduce((acc, row) => {
+            if(!row.ingredient_id){
+                return acc.concat({
+                    step_id: row.step_id,
+                    step_number: row.step_number,
+                    step_instructions: row.step_instructions,
+                    ingredients: []
+                })
             }
-        } 
-        return acc
-    }, {})
+            if(row.ingredient_id && !acc.find(step => step.step_id === row.step_id)){
+                return acc.concat({
+                    step_id: row.step_id,
+                    step_number: row.step_number,
+                    step_text: row.step_text,
+                    ingredients: [
+                        {
+                            ingredient_id: row.ingredient_id,
+                            ingredient_name: row.ingredient_name,
+                            quantity: row.quantity,
+                        }
+                    ]
+                })
+            }
+            const currentStep = acc.find(step => step.step_id === row.step_id)
+            currentStep.ingredients.push({
+                ingredient_id: row.ingredient_id,
+                ingredient_name: row.ingredient_name,
+                quantity: row.quantity,
+            })
+            return acc
+        }, [])
+    }
 
-    recipeObj.steps = addIngredients
-    return recipeObj
-    
+    return recipes
 }
 
-module.exports = {
-    getRecipeById
-} 
+module.exports = { getRecipeById }
